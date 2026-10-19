@@ -2,6 +2,8 @@
 A MLIR-based compilation stack targeting CPUs for high performance AI/ML kernel and models.
 (We only support ARM64 ISA at the moment, we may add RISCV-64 support in the future.)
 
+test commit
+
 Currently, this project supports lowering Triton kernels through Triton-Shared and PyTorch models through Torch-MLIR, ultimately generating ARM64 code in both cases. The resulting code can be launched on an android device via a standalone executable or executed directly on a host ARM64 machine inside of a python environment.
 
 ## Dependencies

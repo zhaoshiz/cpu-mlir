@@ -1,0 +1,108 @@
+diff --git a/backend/compiler.py b/backend/compiler.py
+index 1d2b3cb..569ec8b 100644
+--- a/backend/compiler.py
++++ b/backend/compiler.py
+@@ -9,6 +9,7 @@ from types import ModuleType
+ import hashlib
+ import tempfile
+ import os
++import platform
+ import re
+ import shutil
+ import subprocess
+@@ -16,6 +17,15 @@ import functools
+ import triton
+ from pathlib import Path
+
++def _get_target_triple():
++    if platform.system() == "Darwin":
++        major = platform.mac_ver()[0].split(".")[0]
++        return f"arm64-apple-macosx{major}.0"
++    return "aarch64"
++
++import sys
++sys.path.insert(0, os.getenv('ARM64_BACKEND_PATH') + '/..')
++import qcom_arm64_backend.backend.compiler as qcom_arm64_compiler
+
+ def _get_llvm_bin_path(bin_name: str) -> str:
+     path = os.getenv("LLVM_BINARY_DIR", "")
+@@ -79,7 +89,9 @@ def _llir_to_bin(llir: str, metadata, options):
+             subprocess.check_call(subprocess_args)
+         else:
+             llc_path = _get_llvm_bin_path("llc")
+-            subprocess.check_call([llc_path, src_path, "-filetype=obj", "-relocation-model=pic", "-o", dst_path])
++            subprocess.check_call([llc_path, src_path,
++                f"-mtriple={_get_target_triple()}",
++                "-filetype=obj", "-relocation-model=pic", "-o", dst_path])
+
+         return Path(dst_path).read_bytes()
+ 
+@@ -104,6 +116,19 @@ class CPUOptions:
+     sanitize_overflow: bool = True
+     instrumentation_mode: str = ""
+     fpsan_homomorphic_casts: bool = False
++    # qcom_arm64_backend options
++    arch_triple: str = "armv8-a"
++    arch_features: str = "+sve,+sve2,+sme"
++    vectorize: int = 1
++    vector_ext: str = "sme"
++    base_vector_length: int = 32
++    scalable_vector_length: int = 128
++    num_threads: int = 4
++    # TODO: Currently set name here temporarily. Need to set correctly to the name of the compiled kernel
++    # when driver code is completed.
++    name: str = "arm64"
++    prof_disable_loop: bool = False
++    prof_loop_depth: int = 1
+
+     def __post_init__(self):
+         pass
+@@ -218,8 +243,12 @@ class CPUBackend(BaseBackend):
+ 
+     def add_stages(self, stages, options, language):
+         stages["ttir"] = lambda src, metadata: self.make_ttir(src, metadata, options)
+-        stages["ttsharedir"] = lambda src, metadata: self.make_tt_shared_ir(src, metadata, options)
+-        stages["llir"] = lambda src, metadata: self.make_llir(src, metadata, options)
++        if (os.getenv("TRITON_ARM64_HOST_BUILD", '0') == '1'):
++            stages["ttsharedir"] = lambda src, metadata: qcom_arm64_compiler._optimize_ttsharedir(qcom_arm64_compiler._ttir_to_ttsharedir(src), metadata, options)
++            stages["llir"] = lambda src, metadata: qcom_arm64_compiler._optimize_llir(qcom_arm64_compiler._ttsharedir_to_llir(src, options))
++        else:
++            stages["ttsharedir"] = lambda src, metadata: self.make_tt_shared_ir(src, metadata, options)
++            stages["llir"] = lambda src, metadata: self.make_llir(src, metadata, options)
+         stages["obj"] = lambda src, metadata: _llir_to_bin(src, metadata, options)
+ 
+     @functools.lru_cache()
+diff --git a/backend/driver.py b/backend/driver.py
+index a4ac9ef..54e57c6 100644
+--- a/backend/driver.py
++++ b/backend/driver.py
+@@ -364,11 +364,24 @@ def compile_module(launcher_src, kernel_placeholder_name):
+                       
+                       subprocess.check_call(subprocess_args)
+                   else:
+-                      subprocess.check_call([
+-                        "g++", "-std=c++17", launcher_src_path, obj_path,
+-                        f"-I{py_include_dir}", f"-I{include_dir}", f"-L{py_lib_dir}",
+-                        "-shared", f"-l{py_lib}", "-fPIC", "-o", so_path
+-                      ])
++                      clang_path = _get_llvm_bin_path("clang++")
++                      if platform.system() == "Darwin":
++                          sdk = subprocess.check_output(
++                              ["xcrun", "--show-sdk-path"], text=True).strip()
++                          subprocess.check_call([
++                            clang_path, "-std=c++17", launcher_src_path, obj_path,
++                            f"-I{py_include_dir}", f"-I{include_dir}",
++                            "-shared", "-fPIC",
++                            "-undefined", "dynamic_lookup",
++                            "-isysroot", sdk,
++                            "-o", so_path,
++                          ])
++                      else:
++                          subprocess.check_call([
++                            clang_path, "-std=c++17", launcher_src_path, obj_path,
++                            f"-I{py_include_dir}", f"-I{include_dir}", f"-L{py_lib_dir}",
++                            "-shared", f"-l{py_lib}", "-fPIC", "-o", so_path,
++                          ])
+ 
+               with open(so_path, "rb") as f:
+                 cache_path = cache.put(f.read(), filename, binary=True)

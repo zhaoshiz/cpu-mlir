@@ -1,0 +1,48 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index efd8392b25..c1ee64a373 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -27,6 +27,9 @@ option(TRITON_EXT_ENABLED "Build with default visibility for Triton+LLVM symbol
+ set(TRITON_CODEGEN_BACKENDS "" CACHE STRING "Enable different codegen backends")
+ set(TRITON_VERSION "" CACHE STRING "Triton version string (passed from setup.py)")
+ 
++# QC-Specific
++option(TRITON_ENABLE_ARM64 "Enable targeting ARM64 CPUs" ON)
++
+ set(TRITON_CACHE_PATH "" CACHE PATH "Path to triton cache")
+ set(TRITON_LLVM_SYSTEM_SUFFIX "" CACHE STRING "Path to LLVM system suffix")
+ set(LLVM_SYSPATH "" CACHE PATH "Path to system LLVM installation")
+@@ -208,7 +211,7 @@ endif()
+ # Compiler flags
+ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+ if(NOT MSVC)
+-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS  -fPIC -std=gnu++17")
++  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS  -fPIC -std=gnu++17 -Wno-deprecated-declarations")
+ else()
+   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__STDC_FORMAT_MACROS")
+ endif()
+diff --git a/lib/Tools/CMakeLists.txt b/lib/Tools/CMakeLists.txt
+index 611468b9a2..36e21a0b46 100644
+--- a/lib/Tools/CMakeLists.txt
++++ b/lib/Tools/CMakeLists.txt
+@@ -9,5 +9,6 @@ add_triton_library(TritonTools
+   LINK_LIBS PUBLIC
+   MLIRIR
+   MLIRLLVMDialect
++  LLVMSupport
+   f2reduce
+ )
+diff --git a/python/triton/compiler/compiler.py b/python/triton/compiler/compiler.py
+index a485f697d9..754669c49c 100644
+--- a/python/triton/compiler/compiler.py
++++ b/python/triton/compiler/compiler.py
+@@ -428,7 +428,8 @@ class CompiledKernel:
+             for file in asm_files
+         })
+         self.metadata_group = metadata_group
+-        self.kernel = self.asm[binary_ext]
++        backend_name = self.metadata.target.backend
++        self.kernel = self.asm["llir"] if backend_name == "arm64" else self.asm[binary_ext]
+         # binaries are lazily initialized
+         # because it involves doing runtime things
+         # (e.g., checking amount of shared memory on current device)

@@ -1,0 +1,27 @@
+diff --git a/setup.py b/setup.py
+index 355d8f1ad..740ee300a 100644
+--- a/setup.py
++++ b/setup.py
+@@ -302,10 +302,19 @@ class CMakeBuild(build_ext):
+             build_args += ['-j' + max_jobs]
+ 
+         if check_env_flag("TRITON_BUILD_WITH_CLANG_LLD"):
++            # On mac, CMake resolves bare compiler names via xcrun rather than
++            # PATH, so absolute paths should be used when LLVM_SYSPATH is available
++            llvm_syspath = os.getenv("LLVM_SYSPATH", "")
++            if llvm_syspath:
++                clang   = os.path.join(llvm_syspath, "bin", "clang")
++                clangpp = os.path.join(llvm_syspath, "bin", "clang++")
++                lld     = os.path.join(llvm_syspath, "bin", "lld")
++            else:
++                clang, clangpp, lld = "clang", "clang++", "lld"
+             cmake_args += [
+-                "-DCMAKE_C_COMPILER=clang",
+-                "-DCMAKE_CXX_COMPILER=clang++",
+-                "-DCMAKE_LINKER=lld",
++                f"-DCMAKE_C_COMPILER={clang}",
++                f"-DCMAKE_CXX_COMPILER={clangpp}",
++                f"-DCMAKE_LINKER={lld}",
+                 "-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld",
+                 "-DCMAKE_MODULE_LINKER_FLAGS=-fuse-ld=lld",
+                 "-DCMAKE_SHARED_LINKER_FLAGS=-fuse-ld=lld",

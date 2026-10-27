@@ -1,0 +1,6 @@
+[submodule "triton-shared"]
+	path = triton-shared
+	url = https://github.com/facebookincubator/triton-shared
+[submodule "triton"]
+	path = triton
+	url = https://github.com/triton-lang/triton
